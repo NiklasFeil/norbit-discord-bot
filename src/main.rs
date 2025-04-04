@@ -6,18 +6,9 @@ use poise::serenity_prelude as serenity;
 
 use serenity::prelude::*;
 
-use serenity::{
-    async_trait,
-    client::{Client, EventHandler},
-    framework::{
-        standard::{
-            macros::{command, group},
-        },
-    },
-    model::{channel::Message, gateway::Ready},
-    prelude::{GatewayIntents, TypeMapKey},
-    Result as SerenityResult,
-};
+use songbird::SerenityInit;
+use songbird::events::TrackEvent;
+use songbird::*;
 
 struct Data {}
 
@@ -32,9 +23,7 @@ async fn main() {
     let token = DiscordBotInformationHandler::new("sensitive_information.json").get_bot_token();
 
     // Set gateway intents, which decides what events the bot will be notified about
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+    let intents = GatewayIntents::non_privileged() | GatewayIntents::GUILD_MESSAGES;
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -52,7 +41,7 @@ async fn main() {
     // Create a new instance of the Client, logging in as a bot. This will automatically prepend
     // your bot token with "Bot ", which is a requirement by Discord for bot users.
     let mut client =
-        Client::builder(&token, intents).framework(framework).await.expect("Err creating client");
+        Client::builder(&token, intents).framework(framework).register_songbird().await.expect("Err creating client");
 
     // Finally, start a single shard, and start listening to events.
     //
@@ -67,6 +56,50 @@ async fn main() {
 #[poise::command(prefix_command, slash_command)]
 async fn join(ctx: Context<'_>) -> Result<(), Error> {
     println!("Executed join command");
+    //let channel_id = ctx.channel_id();
+    ctx.say("Join channel").await?;
+
+    let (guild_id, channel_id) = {
+        let guild_id = ctx.guild_id().ok_or("Command not in a guild")?;
+        let user_id = ctx.author().id;
+
+        let guild = match guild_id.to_guild_cached(&ctx.serenity_context().cache) {
+            Some(guild) => guild,
+            None => {
+                println!("Command not written on server. Interrupt join command.");
+                return Ok(());
+            }
+        };
+
+        let voice_state = match guild.voice_states.get(&user_id) {
+            Some(state) => state,
+            None => {
+                println!("Voice state of user could not be received. Interrupt join command.");
+                return Ok(());
+            }
+        };
+        (guild_id, voice_state.channel_id)
+    };
+
+    let channel_to_connect_to = match channel_id {
+        Some(channel) => channel,
+        None => {
+            println!("User is not in a voice channel. Interrupt join command.");
+            ctx.say("Not in a voice channel").await?;
+            return Ok(());
+        }
+    };
+
+    let manager = songbird::get(ctx.serenity_context()).await.expect("Songbird Voice client placed in at initialisation.").clone();
+    
+    let joined = match manager.join(guild_id, channel_to_connect_to).await {
+        Ok(status) => status,
+        Err(why)=> {
+            println!("Joining channel failed. This is why: {:?}", why);
+            return Ok(());
+        }
+    };
+    
     Ok(())
 }
 
