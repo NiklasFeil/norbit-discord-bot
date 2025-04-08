@@ -92,12 +92,12 @@ async fn join(ctx: Context<'_>) -> Result<(), Error> {
 
     let manager = songbird::get(ctx.serenity_context()).await.expect("Songbird Voice client placed in at initialisation.").clone();
     
-    let joined = match manager.join(guild_id, channel_to_connect_to).await {
-        Ok(status) => status,
+    match manager.join(guild_id, channel_to_connect_to).await {
         Err(why)=> {
             println!("Joining channel failed. This is why: {:?}", why);
             return Ok(());
-        }
+        },
+        _ => ()
     };
     
     Ok(())
