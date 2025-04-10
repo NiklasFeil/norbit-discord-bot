@@ -6,8 +6,8 @@ use poise::serenity_prelude as serenity;
 
 use serenity::prelude::*;
 
-use songbird::SerenityInit;
 use songbird::events::TrackEvent;
+use songbird::SerenityInit;
 use songbird::*;
 
 struct Data {}
@@ -17,8 +17,6 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[tokio::main]
 async fn main() {
-
-    
     // Configure the client with your Discord bot token in the json.
     let token = DiscordBotInformationHandler::new("sensitive_information.json").get_bot_token();
 
@@ -27,7 +25,7 @@ async fn main() {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![join()],
+            commands: vec![join(), leave(), play()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -40,8 +38,11 @@ async fn main() {
 
     // Create a new instance of the Client, logging in as a bot. This will automatically prepend
     // your bot token with "Bot ", which is a requirement by Discord for bot users.
-    let mut client =
-        Client::builder(&token, intents).framework(framework).register_songbird().await.expect("Err creating client");
+    let mut client = Client::builder(&token, intents)
+        .framework(framework)
+        .register_songbird()
+        .await
+        .expect("Err creating client");
 
     // Finally, start a single shard, and start listening to events.
     //
@@ -52,12 +53,10 @@ async fn main() {
     }
 }
 
-
 #[poise::command(prefix_command, slash_command)]
 async fn join(ctx: Context<'_>) -> Result<(), Error> {
     println!("Executed join command");
     //let channel_id = ctx.channel_id();
-    ctx.say("Join channel").await?;
 
     let (guild_id, channel_id) = {
         let guild_id = ctx.guild_id().ok_or("Command not in a guild")?;
@@ -90,16 +89,55 @@ async fn join(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
-    let manager = songbird::get(ctx.serenity_context()).await.expect("Songbird Voice client placed in at initialisation.").clone();
-    
+    let manager = songbird::get(ctx.serenity_context())
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
     match manager.join(guild_id, channel_to_connect_to).await {
-        Err(why)=> {
+        Err(why) => {
             println!("Joining channel failed. This is why: {:?}", why);
             return Ok(());
-        },
-        _ => ()
+        }
+        _ => {
+            ctx.say("Joining channel...").await?;
+        }
     };
-    
+
     Ok(())
 }
 
+#[poise::command(prefix_command, slash_command)]
+async fn leave(ctx: Context<'_>) -> Result<(), Error> {
+    println!("Executing leave command");
+
+    let guild_id = match ctx.guild_id() {
+        Some(id) => id,
+        None => return Ok(()),
+    };
+
+    let manager = songbird::get(ctx.serenity_context())
+        .await
+        .expect("Songbird Voice client placed in at initialization when trying to leave.")
+        .clone();
+
+    let has_handler = manager.get(guild_id).is_some();
+
+    if has_handler {
+        if let Err(e) = manager.remove(guild_id).await {
+            ctx.say(format!("Failed: {:?}", e)).await?;
+            return Ok(());
+        };
+
+        ctx.say("Leaving channel...").await?;
+    } else {
+        ctx.say("I'm not in a voice channel").await?;
+    }
+
+    Ok(())
+}
+
+#[poise::command(prefix_command, slash_command)]
+async fn play(ctx: Context<'_>) -> Result<(), Error> {
+    Ok(())
+}
